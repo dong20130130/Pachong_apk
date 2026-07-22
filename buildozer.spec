@@ -22,7 +22,8 @@ source.exclude_patterns = *.pyc, *.pyo, venv/*, *.spec, .idea/*, .vscode/*
 # 不依赖 lxml（改用 Python 内置 html.parser），减少 p4a 编译失败风险。
 # python3 与 hostpython3 必须同版本：hostpython3 是 p4a 用来交叉编译其他配方的
 # 宿主 Python，两者不一致会报 "python3 should have same version as hostpython3"。
-requirements = python3==3.11,hostpython3==3.11,kivy,requests,beautifulsoup4,yt-dlp
+# 必须锁完整版本号(带补丁)：只写 "3.11" 会让 p4a 拼出 .../3.11/Python-3.11.tar.xz 而 404。
+requirements = python3==3.11.9,hostpython3==3.11.9,kivy,requests,beautifulsoup4,yt-dlp
 
 # 屏幕与方向
 orientation = portrait
