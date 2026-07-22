@@ -20,7 +20,7 @@ source.exclude_patterns = *.pyc, *.pyo, venv/*, *.spec, .idea/*, .vscode/*
 # 在 Android(ARM) 上无法使用，故不纳入；视频托管页的合并在手机端会受限
 # （详见 BUILD_ANDROID.md）。文字/图片/音频直链下载不受影响。
 # 不依赖 lxml（改用 Python 内置 html.parser），减少 p4a 编译失败风险。
-requirements = python3,kivy,requests,beautifulsoup4,yt-dlp
+requirements = python3==3.11,kivy,requests,beautifulsoup4,yt-dlp
 
 # 屏幕与方向
 orientation = portrait
@@ -33,7 +33,12 @@ android.api = 33
 android.minapi = 21
 android.sdk = 33
 android.accept_sdk_license = True
-# 不固定 ndk / p4a.branch：交给当前 buildozer 版本自带的稳定组合，避免映射不匹配或主干漂移导致编译失败。
+# 固定 NDK 为 25b：buildozer 1.5.0 自带的 python-for-android(2024.x) 与 NDK r28c 不兼容，
+# 会导致 pythonforandroid.toolchain create 失败；25b 是该组合下经过验证的稳定版本。
+android.ndk = 25b
+# 只编 arm64-v8a：减少编译内存占用与耗时（armeabi-v7a 现代手机基本不需要），降低 OOM 失败概率。
+android.archs = arm64-v8a
+# 不固定 p4a.branch：使用 buildozer 依赖锁定的 p4a 版本，避免主干漂移。
 
 [buildozer]
 log_level = 2

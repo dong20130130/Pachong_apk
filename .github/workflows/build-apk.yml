@@ -40,6 +40,16 @@ jobs:
         run: |
           buildozer android debug --verbose
 
+      - name: Surface real error on failure
+        if: failure()
+        run: |
+          echo "===== buildozer 日志文件清单 ====="
+          find .buildozer -name "*.log" 2>/dev/null | head
+          echo "----- 最近的 buildozer 日志（tail 80 行）-----"
+          find .buildozer -name "*.log" -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2- | xargs tail -n 80 2>/dev/null || true
+          echo "----- 含 error / traceback / command failed 的关键行 -----"
+          grep -rniE "error:|exception|traceback|command failed|fatal error" .buildozer 2>/dev/null | tail -n 50 || true
+
       - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
