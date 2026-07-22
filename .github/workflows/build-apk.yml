@@ -24,7 +24,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y git zip unzip openjdk-17-jdk python3-pip \
-            autoconf automake libtool pkg-config
+            autoconf automake libtool pkg-config ccache \
+            build-essential libssl-dev libffi-dev zlib1g-dev \
+            libsqlite3-dev libbz2-dev libreadline-dev liblzma-dev libjpeg-dev
 
       - name: Install Buildozer
         run: |
@@ -38,17 +40,16 @@ jobs:
           # 让 buildozer 自动接受 Android SDK 许可
           CI: "true"
         run: |
-          buildozer android debug --verbose
+          # 完整输出同时落盘到 buildozer_full.log，失败时可精准抓取真错误
+          buildozer android debug --verbose 2>&1 | tee buildozer_full.log
 
       - name: Surface real error on failure
         if: failure()
         run: |
-          echo "===== buildozer 日志文件清单 ====="
-          find .buildozer -name "*.log" 2>/dev/null | head
-          echo "----- 最近的 buildozer 日志（tail 80 行）-----"
-          find .buildozer -name "*.log" -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2- | xargs tail -n 80 2>/dev/null || true
-          echo "----- 含 error / traceback / command failed 的关键行 -----"
-          grep -rniE "error:|exception|traceback|command failed|fatal error" .buildozer 2>/dev/null | tail -n 50 || true
+          echo "===== 关键错误行（来自完整构建日志）====="
+          grep -niE "error:|exception|traceback|command failed|fatal error|could not|no such|404|denied|missing" buildozer_full.log 2>/dev/null | tail -n 80 || true
+          echo "----- 完整日志末尾 120 行 -----"
+          tail -n 120 buildozer_full.log 2>/dev/null || true
 
       - name: Upload APK artifact
         if: success()
@@ -64,6 +65,7 @@ jobs:
         with:
           name: buildozer-debug-logs
           path: |
+            buildozer_full.log
             .buildozer/android/platform/build-*/**/*.log
             *.log
           if-no-files-found: ignore
