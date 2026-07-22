@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.Python
+
+# Local data / logs
+downloads/
+*.log
+crash.log
+run.log
+
+# Buildozer / python-for-android build artifacts
+.buildozer/
+bin/
+.build/
+.kivy/
+
+# Android / IDE
+*.apk
+.gradle/
+local.properties
