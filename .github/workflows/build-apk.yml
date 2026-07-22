@@ -30,7 +30,8 @@ jobs:
         run: |
           pip install --upgrade pip
           # 锁定经过验证的稳定组合，避免最新版漂移导致 p4a 编译失败
-          pip install "buildozer==1.5.2" "Cython==0.29.36"
+          # 注意：buildozer 无 1.5.2 版本，PyPI 现有 ...1.5.0, 1.6.0；这里用 1.5.0
+          pip install "buildozer==1.5.0" "Cython==0.29.36"
 
       - name: Build APK (debug)
         env:
