@@ -58,7 +58,8 @@ def extract(html: str, base_url: str, enabled_kinds, same_domain: bool = True):
       - resources: 本页发现的 Resource 列表（视频/音频/图片/文本）
       - links: 本页中可继续爬取的同源 http(s) 链接集合
     """
-    soup = BeautifulSoup(html, "lxml")
+    # 用 Python 内置 html.parser，避免依赖 lxml（C 扩展在 p4a/Android 上编译易失败）
+    soup = BeautifulSoup(html, "html.parser")
     resources: list[Resource] = []
     seen_urls: set[str] = set()
 

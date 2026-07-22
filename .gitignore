@@ -20,3 +20,6 @@ bin/
 *.apk
 .gradle/
 local.properties
+
+# Local helper scripts (may contain secrets/PAT) - never commit
+*.ps1

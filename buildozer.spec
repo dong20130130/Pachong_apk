@@ -19,7 +19,8 @@ source.exclude_patterns = *.pyc, *.pyo, venv/*, *.spec, .idea/*, .vscode/*
 # 依赖。注意：imageio-ffmpeg 自带的二进制是桌面版(x86/win)，
 # 在 Android(ARM) 上无法使用，故不纳入；视频托管页的合并在手机端会受限
 # （详见 BUILD_ANDROID.md）。文字/图片/音频直链下载不受影响。
-requirements = python3,kivy,requests,beautifulsoup4,lxml,yt-dlp
+# 不依赖 lxml（改用 Python 内置 html.parser），减少 p4a 编译失败风险。
+requirements = python3,kivy,requests,beautifulsoup4,yt-dlp
 
 # 屏幕与方向
 orientation = portrait
@@ -30,10 +31,9 @@ android.wakelock = True
 android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, POST_NOTIFICATIONS
 android.api = 33
 android.minapi = 21
-android.ndk = 25b
 android.sdk = 33
 android.accept_sdk_license = True
-p4a.branch = master
+# 不固定 ndk / p4a.branch：交给当前 buildozer 版本自带的稳定组合，避免映射不匹配或主干漂移导致编译失败。
 
 [buildozer]
 log_level = 2
