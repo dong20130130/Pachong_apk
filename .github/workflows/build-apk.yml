@@ -10,7 +10,9 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # ubuntu-22.04 用较旧 autotools(libtool 2.4.6)，可正常构建 p4a 的 libffi 配方；
+    # ubuntu-24.04 的 libtool 2.4.7 会让 libffi 的 configure.ac 报 LT_SYS_SYMBOL_USCORE 未定义而失败。
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
