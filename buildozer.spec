@@ -20,7 +20,9 @@ source.exclude_patterns = *.pyc, *.pyo, venv/*, *.spec, .idea/*, .vscode/*
 # 在 Android(ARM) 上无法使用，故不纳入；视频托管页的合并在手机端会受限
 # （详见 BUILD_ANDROID.md）。文字/图片/音频直链下载不受影响。
 # 不依赖 lxml（改用 Python 内置 html.parser），减少 p4a 编译失败风险。
-requirements = python3==3.11,kivy,requests,beautifulsoup4,yt-dlp
+# python3 与 hostpython3 必须同版本：hostpython3 是 p4a 用来交叉编译其他配方的
+# 宿主 Python，两者不一致会报 "python3 should have same version as hostpython3"。
+requirements = python3==3.11,hostpython3==3.11,kivy,requests,beautifulsoup4,yt-dlp
 
 # 屏幕与方向
 orientation = portrait
