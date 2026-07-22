@@ -38,23 +38,30 @@ jobs:
           pip install "buildozer==1.5.0" "Cython==0.29.36"
 
       - name: Build APK (debug)
+        id: build
         env:
           # 让 buildozer 自动接受 Android SDK 许可
           CI: "true"
         run: |
           # 完整输出同时落盘到 buildozer_full.log，失败时可精准抓取真错误
+          # 注意：GitHub 默认 bash 带 -o pipefail，buildozer 失败会让本步骤失败
+          set -o pipefail
           buildozer android debug --verbose 2>&1 | tee buildozer_full.log
 
       - name: Surface real error on failure
         if: failure()
         run: |
+          echo "===== bin 目录内容（确认是否产出 apk）====="
+          ls -la bin/ 2>/dev/null || echo "（无 bin 目录）"
           echo "===== 关键错误行（来自完整构建日志）====="
           grep -niE "error:|exception|traceback|command failed|fatal error|could not|no such|404|denied|missing" buildozer_full.log 2>/dev/null | tail -n 80 || true
           echo "----- 完整日志末尾 120 行 -----"
           tail -n 120 buildozer_full.log 2>/dev/null || true
 
       - name: Upload APK artifact
-        if: success()
+        # 关键：必须用 build 步骤自身的 outcome，不能用默认的 success()——
+        # 否则 build 失败后“Surface error”步骤(退出0)会让 success() 误判、仍尝试上传导致误报。
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: webcrawler-apk
