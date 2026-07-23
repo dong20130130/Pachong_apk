@@ -53,10 +53,20 @@ jobs:
         run: |
           echo "===== bin 目录内容（确认是否产出 apk）====="
           ls -la bin/ 2>/dev/null || echo "（无 bin 目录）"
-          echo "===== 关键错误行（来自完整构建日志）====="
-          grep -niE "error:|exception|traceback|command failed|fatal error|could not|no such|404|denied|missing" buildozer_full.log 2>/dev/null | tail -n 80 || true
-          echo "----- 完整日志末尾 120 行 -----"
-          tail -n 120 buildozer_full.log 2>/dev/null || true
+          echo "===== [1] buildozer_full.log 关键错误行（已覆盖 OOM/超时/make 失败）====="
+          grep -niE "error:|exception|traceback|command failed|fatal error|could not|no such|404|denied|missing|killed|sigkill|out of memory|memoryerror|cannot allocate|terminated|signal|make: \*\*\*|exit code|timed out|timeout" buildozer_full.log 2>/dev/null | tail -n 120 || true
+          echo "===== [2] 所有 .buildozer 子日志中的错误行 ====="
+          grep -rniE "error:|command failed|fatal|killed|out of memory|make: \*\*\*" .buildozer/android/platform/build-*/ 2>/dev/null | tail -n 60 || true
+          echo "===== [3] buildozer_full.log 末尾 200 行（看中断点）====="
+          tail -n 200 buildozer_full.log 2>/dev/null || echo "（无 buildozer_full.log）"
+          echo "===== 诊断提示 ====="
+          if grep -qiE "killed|sigkill|out of memory|cannot allocate memory" buildozer_full.log 2>/dev/null; then
+            echo ">>> 检测到内存不足(OOM)被杀。可降低并行编译或加大 runner 内存。"
+          elif [ ! -s buildozer_full.log ]; then
+            echo ">>> buildozer_full.log 为空，构建在极早阶段即崩溃。"
+          else
+            echo ">>> 未捕获到显式错误文本。很可能 job 被 OOM 杀掉或 6 小时超时；请下载下方 buildozer-debug-logs artifact，直接看 buildozer_full.log 的最后几行确认中断点。"
+          fi
 
       - name: Upload APK artifact
         # 关键：必须用 build 步骤自身的 outcome，不能用默认的 success()——
