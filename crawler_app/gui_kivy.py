@@ -291,6 +291,8 @@ class CrawlerApp(App):
 
         self._log(f"输出目录：{self.out_dir}")
         self._log(_CJK_FONT_MSG)
+        if not self._ensure_manage_storage(jump=False):
+            self._log("[提示] 下载需『所有文件访问权限』，首次下载会跳转到设置页开启")
         return root
 
     # ---- 默认输出目录 ----
@@ -406,6 +408,35 @@ class CrawlerApp(App):
     def _on_resource(self, res):
         self.msg_queue.put(("resource", res))
 
+    # ---- Android 11+ 存储权限（写 /sdcard 根目录必需）----
+    def _ensure_manage_storage(self, jump=False):
+        # MANAGE_EXTERNAL_STORAGE 是特殊权限：仅靠 buildozer.spec 声明不够，
+        # 必须运行时引导用户到系统设置页手动开启，否则写入 /sdcard 根目录
+        # 会报 "Operation not permitted"。
+        try:
+            from jnius import autoclass, cast
+            Build = autoclass("android.os.Build")
+            if Build.VERSION.SDK_INT < 30:
+                return True  # Android 10 及以下用旧存储模型即可
+            Environment = autoclass("android.os.Environment")
+            if Environment.isExternalStorageManager():
+                return True  # 已授权
+            if jump:
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                context = cast("android.content.Context", PythonActivity.mActivity)
+                Intent = autoclass("android.content.Intent")
+                Settings = autoclass("android.provider.Settings")
+                Uri = autoclass("android.net.Uri")
+                intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                intent.setData(Uri.fromParts("package", context.getPackageName(), None))
+                context.startActivity(intent)
+                self._log("[权限] 已打开设置页，请开启『所有文件访问权限』后返回 App")
+            return False
+        except Exception as e:  # noqa: BLE001
+            # 桌面或非 Android 环境无 jnius/Android 类，直接放行
+            self._log(f"[权限] 检测跳过（非 Android）：{e}")
+            return True
+
     # ---- 下载 ----
     def download_platform(self, *a):
         if self._downloading:
@@ -417,6 +448,8 @@ class CrawlerApp(App):
             return
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
+        if not self._ensure_manage_storage(jump=True):
+            return
         os.makedirs(self.out_dir, exist_ok=True)
         self._downloading = True
         self.status_label.text = "yt-dlp 解析中..."
@@ -449,6 +482,8 @@ class CrawlerApp(App):
         selected = [r for r in self.resources if r.selected]
         if not selected:
             self._log("请先选择要下载的资源")
+            return
+        if not self._ensure_manage_storage(jump=True):
             return
         os.makedirs(self.out_dir, exist_ok=True)
         self._downloading = True
