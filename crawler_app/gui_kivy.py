@@ -123,6 +123,9 @@ class CrawlerApp(App):
         self._downloading = False
         self.cookiefile = ""
         self.out_dir = self._default_out_dir()
+        # 本会话是否已按用户确认/稍后处理过权限弹窗：一旦处理过，
+        # 本次运行不再自动弹出（只有下次打开应用才会重新检测）。
+        self._perm_suppressed = False
 
         root = BoxLayout(orientation="vertical", padding=dp(8), spacing=dp(6))
 
@@ -418,14 +421,46 @@ class CrawlerApp(App):
 
     # ---- 实测：当前能否真正写入输出目录（比 isExternalStorageManager 更可靠）----
     def _can_write_out_dir(self):
-        d = self.out_dir
+        # 依次尝试输出目录及子目录，任一可写即视为有权限
+        candidates = [self.out_dir, os.path.join(self.out_dir, "sub")]
+        for d in candidates:
+            try:
+                os.makedirs(d, exist_ok=True)
+                tmp = os.path.join(d, ".write_test_" + str(os.getpid()))
+                with open(tmp, "w") as f:
+                    f.write("ok")
+                os.remove(tmp)
+                return True
+            except Exception:
+                continue
+        return False
+
+    # ---- 官方 API 检测：Environment.isExternalStorageManager() ----
+    def _has_manage_storage_api(self):
         try:
-            os.makedirs(d, exist_ok=True)
-            tmp = os.path.join(d, ".write_test_" + str(os.getpid()))
-            with open(tmp, "w") as f:
-                f.write("ok")
-            os.remove(tmp)
-            return True
+            from jnius import autoclass
+            Environment = autoclass("android.os.Environment")
+            return bool(Environment.isExternalStorageManager())
+        except Exception:
+            return False
+
+    # ---- AppOps 实时检测：部分 ROM 上 isExternalStorageManager 反映慢，
+    #      改用 AppOpsManager.checkOpNoThrow 查询『android:manage_external_storage』，
+    #      该值随系统设置实时变化，比官方 API 更及时。----
+    def _has_manage_storage_appops(self):
+        try:
+            from jnius import autoclass, cast
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            context = cast("android.content.Context", PythonActivity.mActivity)
+            appops = context.getSystemService("appops")
+            if appops is None:
+                return False
+            uid = context.getApplicationInfo().uid
+            pkg = context.getPackageName()
+            # AppOpsManager.MODE_ALLOWED == 0
+            mode = appops.checkOpNoThrow(
+                "android:manage_external_storage", uid, pkg)
+            return mode == 0
         except Exception:
             return False
 
@@ -435,7 +470,7 @@ class CrawlerApp(App):
         # 必须运行时引导用户到系统设置页手动开启，否则写入 /sdcard 根目录
         # 会报 "Operation not permitted"。
         try:
-            from jnius import autoclass, cast
+            from jnius import autoclass
         except Exception as e:  # noqa: BLE001
             # 桌面或非 Android 环境无 jnius，直接放行
             self._log(f"[权限] 非 Android 环境，跳过检测：{e}")
@@ -445,17 +480,22 @@ class CrawlerApp(App):
             Build = autoclass("android.os.Build")
             if Build.VERSION.SDK_INT < 30:
                 return True  # Android 10 及以下用旧存储模型即可
-            Environment = autoclass("android.os.Environment")
-            if Environment.isExternalStorageManager():
-                return True  # 已授权
-            # 兜底：部分机型/ROM 上 isExternalStorageManager() 授权后反映不及时，
-            # 直接实测能否写入输出目录，能写就视为已授权。
+
+            # 第 1 层：官方 API
+            if self._has_manage_storage_api():
+                return True
+            # 第 2 层：AppOps 实时查询（对部分 ROM 比官方 API 更及时）
+            if self._has_manage_storage_appops():
+                self._log("[权限] AppOps 已检测到授权")
+                return True
+            # 第 3 层：实测能否写入输出目录（最可靠）
             if self._can_write_out_dir():
                 self._log("[权限] 实测可写入，视为已授权")
                 return True
+
             if jump:
                 self._open_manage_storage_settings()
-                self._log("[权限] 已跳转到设置页，请开启『所有文件访问权限』后返回并重新点击下载")
+                self._log("[权限] 已跳转到设置页，请开启『所有文件访问权限』后返回")
             return False
         except Exception as e:  # noqa: BLE001
             # Android 真机上检测失败必须拦住，不能放行，否则下载会报 Operation not permitted
@@ -463,8 +503,7 @@ class CrawlerApp(App):
             self._log("[权限] 请手动去 设置 -> 应用 -> 通用网页爬虫 -> 权限 -> 开启『所有文件访问权限』")
             if jump:
                 try:
-                    self._open_app_settings()
-                    self._log("[权限] 已打开应用设置页")
+                    self._open_manage_storage_settings()
                 except Exception as e2:  # noqa: BLE001
                     self._log(f"[权限] 无法自动打开设置页：{e2}")
             return False
@@ -503,7 +542,9 @@ class CrawlerApp(App):
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
         if not self._ensure_manage_storage(jump=False):
-            self._show_storage_permission_popup()
+            self._log("[权限] 未获得『所有文件访问权限』，无法下载。")
+            self._log("        请去 设置 → 应用 → 通用网页爬虫 → 权限 开启后，")
+            self._log("        彻底关闭应用（杀掉后台）再重新打开即可正常下载。")
             return
         os.makedirs(self.out_dir, exist_ok=True)
         self._downloading = True
@@ -541,7 +582,9 @@ class CrawlerApp(App):
             self._log("请先选择要下载的资源")
             return
         if not self._ensure_manage_storage(jump=False):
-            self._show_storage_permission_popup()
+            self._log("[权限] 未获得『所有文件访问权限』，无法下载。")
+            self._log("        请去 设置 → 应用 → 通用网页爬虫 → 权限 开启后，")
+            self._log("        彻底关闭应用（杀掉后台）再重新打开即可正常下载。")
             return
         os.makedirs(self.out_dir, exist_ok=True)
         self._downloading = True
@@ -578,8 +621,10 @@ class CrawlerApp(App):
         return "operation not permitted" in txt or "permission denied" in txt
 
     def _show_storage_permission_popup(self):
-        # 避免重复弹出
+        # 避免重复弹出；且本会话已处理过（用户点过『我已开启/稍后/去开启』）则不再弹
         if getattr(self, "_perm_popup_open", False):
+            return
+        if getattr(self, "_perm_suppressed", False):
             return
         from kivy.uix.popup import Popup
 
@@ -594,7 +639,9 @@ class CrawlerApp(App):
                   "开启步骤：\n"
                   "  设置 → 应用 → 通用网页爬虫 → 权限\n"
                   "  → 开启『所有文件访问权限』\n\n"
-                  "开启后返回本应用即可正常下载。"),
+                  "开启后返回本应用即可正常下载。\n\n"
+                  "提示：部分手机（小米/华为/OPPO 等）开启权限后需要\n"
+                  "『彻底关闭本应用（杀掉后台）再重新打开』才会生效。"),
             size_hint_y=1, font_size=sp(13),
             color=(0.95, 0.95, 0.95, 1),
             halign="left", valign="top")
@@ -620,19 +667,31 @@ class CrawlerApp(App):
                     self._open_app_settings()
                 except Exception as e2:  # noqa: BLE001
                     self._log(f"[权限] 仍无法打开：{e2}")
+            # 已引导去设置页：本次运行不再自动弹窗，下次打开应用会重新检测
+            self._perm_suppressed = True
+            popup.dismiss()
+
+        def do_later(*a):
+            # 用户选择稍后：本次运行不再弹窗，下次打开应用会重新检测
+            self._perm_suppressed = True
             popup.dismiss()
 
         def do_retry(*a):
             # 用户已在设置中开启后，回到本弹窗点此立即复核
-            if self._ensure_manage_storage(jump=False):
+            ok = self._ensure_manage_storage(jump=False)
+            if ok:
                 self._log("[权限] 已确认获得授权，可正常下载")
-                popup.dismiss()
             else:
-                self._log("[权限] 仍未检测到授权，请确认已在"
-                          "『所有文件访问权限』中开启并允许")
+                # 检测仍未通过：信任用户已开启，按用户确认不再弹窗；
+                # 部分 ROM 需『彻底关闭应用后重新打开』才生效，若下载仍失败可重启应用。
+                self._log("[权限] 仍未自动检测到授权（部分手机需『彻底关闭应用后重新打开』才生效）。")
+                self._log("[权限] 已按你的确认跳过本会话提示；若下载失败，请重启应用再试。")
+            # 无论是否检测到，用户点『我已开启』即视为本次会话不再弹窗
+            self._perm_suppressed = True
+            popup.dismiss()
 
         btn_open.bind(on_release=do_open)
-        btn_later.bind(on_release=popup.dismiss)
+        btn_later.bind(on_release=do_later)
         btn_retry.bind(on_release=do_retry)
         btn_row.add_widget(btn_later)
         btn_row.add_widget(btn_retry)
@@ -732,7 +791,10 @@ class CrawlerApp(App):
         if kind == "log":
             self._log(payload)
         elif kind == "permission_popup":
-            self._show_storage_permission_popup()
+            # 仅在 app 进入时弹窗（build 中触发）；下载过程中的权限错误只记日志，
+            # 不再自动弹窗打扰用户。
+            self._log("[权限] 下载被系统拒绝（Operation not permitted）。")
+            self._log("        请确认已开启『所有文件访问权限』，并彻底关闭应用后重新打开再试。")
         elif kind == "resource":
             self._add_resource(payload)
         elif kind == "crawl_progress":
