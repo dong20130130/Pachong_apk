@@ -245,18 +245,22 @@ class CrawlerApp(App):
 
         # 底部：操作 + 进度
         bottom = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(6))
-        self.btn_selall = Button(text="全选", size_hint_x=0.15)
-        self.btn_invert = Button(text="反选", size_hint_x=0.15)
-        self.btn_dl = Button(text="下载选中", size_hint_x=0.25,
+        self.btn_selall = Button(text="全选", size_hint_x=0.13)
+        self.btn_invert = Button(text="反选", size_hint_x=0.13)
+        self.btn_dl = Button(text="下载选中", size_hint_x=0.22,
                              background_color=(0.05, 0.39, 0.61, 1))
+        # 打开输出目录（手动查看已下载文件）
+        self.btn_opendir = Button(text="打开目录", size_hint_x=0.17,
+                                  background_color=(0.3, 0.3, 0.3, 1))
         # 下载完成后直接打开（勾选后，用系统查看器打开刚下载的文件/目录）
-        self.open_after_cb = CheckBox(active=False, size_hint_x=0.1)
-        self.open_after_lab = Label(text="下完打开", size_hint_x=0.13,
+        self.open_after_cb = CheckBox(active=False, size_hint_x=0.08)
+        self.open_after_lab = Label(text="下完打开", size_hint_x=0.12,
                                     font_size=sp(11), color=(0.85, 0.85, 0.85, 1))
-        self.progress = ProgressBar(size_hint_x=0.22, max=100, value=0)
+        self.progress = ProgressBar(size_hint_x=0.15, max=100, value=0)
         bottom.add_widget(self.btn_selall)
         bottom.add_widget(self.btn_invert)
         bottom.add_widget(self.btn_dl)
+        bottom.add_widget(self.btn_opendir)
         bottom.add_widget(self.open_after_cb)
         bottom.add_widget(self.open_after_lab)
         bottom.add_widget(self.progress)
@@ -275,6 +279,7 @@ class CrawlerApp(App):
         self.btn_selall.bind(on_release=self.select_all)
         self.btn_invert.bind(on_release=self.invert_sel)
         self.btn_dl.bind(on_release=self.start_download)
+        self.btn_opendir.bind(on_release=self.open_out_dir)
 
         # 后台线程结果轮询（在主线程刷新 UI）
         Clock.schedule_interval(self._poll, 0.1)
@@ -480,7 +485,31 @@ class CrawlerApp(App):
             activity.startActivity(intent)
             self._log(f"[打开] 已请求系统打开：{target}")
         except Exception as e:  # noqa: BLE001
-            self._log(f"[打开失败] {e}（可改用『打开输出目录』）")
+            self._log(f"[打开失败] {e}（可改用『打开目录』手动查看）")
+
+    # ---- 打开输出目录（手动查看已下载文件）----
+    def open_out_dir(self, *a):
+        os.makedirs(self.out_dir, exist_ok=True)
+        # 无论能否唤起文件管理器，都把完整路径显著打到日志，保证手动可找到
+        self._log(f"[目录] 下载保存在：{self.out_dir}")
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Uri = autoclass("android.net.Uri")
+            File = autoclass("java.io.File")
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            activity = PythonActivity.mActivity
+            uri = Uri.fromFile(File(self.out_dir))
+            intent = Intent(Intent.ACTION_VIEW)
+            # 部分文件管理器识别该 MIME 打开文件夹
+            intent.setDataAndType(uri, "resource/folder")
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.startActivity(intent)
+            self._log("[目录] 已请求打开文件夹（若无反应，请用手机文件管理器按上面路径查找）")
+        except Exception as e:  # noqa: BLE001
+            self._log(f"[提示] 无法唤起文件管理器：{e}")
+            self._log("请打开手机『文件管理』App，按上面显示的路径手动查看。")
 
     # ---- 资源列表选择 ----
     def select_all(self, *a):
