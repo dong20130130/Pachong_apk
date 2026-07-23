@@ -300,20 +300,18 @@ class CrawlerApp(App):
     def _default_out_dir(self):
         # 下载到内部存储根目录下的 pachong 文件夹，用户在文件管理器自行创建。
         # 优先用 /sdcard：它是内部存储根的符号链接，文件管理器显示即『内部存储』，
-        # 这样日志提示的路径（/sdcard/pachong）与用户在文件管理器看到的完全一致；
-        # 拿不到再回退到 Environment 真实路径 / 外部文件目录 / 内部目录 / cwd。
-        candidates = ["/sdcard"]
+        # 这样日志提示的路径（/sdcard/pachong）与用户在文件管理器看到的完全一致。
+        if os.path.isdir("/sdcard"):
+            return os.path.join("/sdcard", "pachong")
+        # /sdcard 不存在时回退到 Environment 真实路径
         try:
             from jnius import autoclass
             Environment = autoclass("android.os.Environment")
             p = Environment.getExternalStorageDirectory().getAbsolutePath()
-            if p:
-                candidates.insert(0, p)
+            if p and os.path.isdir(p):
+                return os.path.join(p, "pachong")
         except Exception:
             pass
-        for c in candidates:
-            if c and os.path.isdir(c):
-                return os.path.join(c, "pachong")
         # 兜底（非 Android / 极端情况）
         try:
             return os.path.join(App.get_running_app().user_data_dir, "pachong")
@@ -422,6 +420,12 @@ class CrawlerApp(App):
         # 会报 "Operation not permitted"。
         try:
             from jnius import autoclass, cast
+        except Exception as e:  # noqa: BLE001
+            # 桌面或非 Android 环境无 jnius，直接放行
+            self._log(f"[权限] 非 Android 环境，跳过检测：{e}")
+            return True
+
+        try:
             Build = autoclass("android.os.Build")
             if Build.VERSION.SDK_INT < 30:
                 return True  # Android 10 及以下用旧存储模型即可
@@ -429,20 +433,42 @@ class CrawlerApp(App):
             if Environment.isExternalStorageManager():
                 return True  # 已授权
             if jump:
-                PythonActivity = autoclass("org.kivy.android.PythonActivity")
-                context = cast("android.content.Context", PythonActivity.mActivity)
-                Intent = autoclass("android.content.Intent")
-                Settings = autoclass("android.provider.Settings")
-                Uri = autoclass("android.net.Uri")
-                intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                intent.setData(Uri.fromParts("package", context.getPackageName(), None))
-                context.startActivity(intent)
-                self._log("[权限] 已打开设置页，请开启『所有文件访问权限』后返回 App")
+                self._open_manage_storage_settings()
+                self._log("[权限] 已跳转到设置页，请开启『所有文件访问权限』后返回并重新点击下载")
             return False
         except Exception as e:  # noqa: BLE001
-            # 桌面或非 Android 环境无 jnius/Android 类，直接放行
-            self._log(f"[权限] 检测跳过（非 Android）：{e}")
-            return True
+            # Android 真机上检测失败必须拦住，不能放行，否则下载会报 Operation not permitted
+            self._log(f"[权限] 检测失败：{e}")
+            self._log("[权限] 请手动去 设置 -> 应用 -> 通用网页爬虫 -> 权限 -> 开启『所有文件访问权限』")
+            if jump:
+                try:
+                    self._open_app_settings()
+                    self._log("[权限] 已打开应用设置页")
+                except Exception as e2:  # noqa: BLE001
+                    self._log(f"[权限] 无法自动打开设置页：{e2}")
+            return False
+
+    def _open_manage_storage_settings(self):
+        from jnius import autoclass, cast
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        context = cast("android.content.Context", PythonActivity.mActivity)
+        Intent = autoclass("android.content.Intent")
+        Settings = autoclass("android.provider.Settings")
+        Uri = autoclass("android.net.Uri")
+        intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+        intent.setData(Uri.fromParts("package", context.getPackageName(), None))
+        context.startActivity(intent)
+
+    def _open_app_settings(self):
+        from jnius import autoclass, cast
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        context = cast("android.content.Context", PythonActivity.mActivity)
+        Intent = autoclass("android.content.Intent")
+        Settings = autoclass("android.provider.Settings")
+        Uri = autoclass("android.net.Uri")
+        intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        intent.setData(Uri.fromParts("package", context.getPackageName(), None))
+        context.startActivity(intent)
 
     # ---- 下载 ----
     def download_platform(self, *a):
@@ -477,7 +503,7 @@ class CrawlerApp(App):
                 if p:
                     paths.append(p)
             except Exception as e:  # noqa: BLE001
-                self.msg_queue.put(("log", f"[失败] {e}"))
+                self.msg_queue.put(("log", self._fmt_download_err(e)))
             self.msg_queue.put(("download_done", (1, paths)))
 
         threading.Thread(target=run, daemon=True).start()
@@ -513,11 +539,21 @@ class CrawlerApp(App):
                         paths.append(p)
                 except Exception as e:  # noqa: BLE001
                     self.msg_queue.put(
-                        ("log", f"[失败] {res.display_name()}: {e}"))
+                        ("log", self._fmt_download_err(e, res.display_name())))
             self.msg_queue.put(("download_done", (total, paths)))
 
         self.download_thread = threading.Thread(target=run, daemon=True)
         self.download_thread.start()
+
+    # ---- 下载失败提示：遇到 Operation not permitted 时明确指向权限问题 ----
+    def _fmt_download_err(self, e, name=None):
+        base = f"[失败] {name}: {e}" if name else f"[失败] {e}"
+        txt = str(e)
+        if "Operation not permitted" in txt or "Permission denied" in txt:
+            base += "\n[提示] 这是存储权限未开启导致。请去："
+            base += "\n       设置 -> 应用 -> 通用网页爬虫 -> 权限"
+            base += "\n       开启『所有文件访问权限』后再试。"
+        return base
 
     # ---- 下载完成后直接打开（安卓：调起系统查看器打开文件/目录） ----
     def _open_downloaded(self, paths):
