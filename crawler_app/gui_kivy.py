@@ -293,7 +293,10 @@ class CrawlerApp(App):
         self._log("[提示] 即手机文件管理器中的『内部存储/pachong』")
         self._log(_CJK_FONT_MSG)
         if not self._ensure_manage_storage(jump=False):
-            self._log("[提示] 下载需『所有文件访问权限』，首次下载会跳转到设置页开启")
+            self._log("[提示] 下载需『所有文件访问权限』，将在弹窗中引导开启")
+            # 启动后延迟弹窗，确保界面已就绪
+            Clock.schedule_once(
+                lambda dt: self._show_storage_permission_popup(), 0.6)
         return root
 
     # ---- 默认输出目录 ----
@@ -481,7 +484,8 @@ class CrawlerApp(App):
             return
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
-        if not self._ensure_manage_storage(jump=True):
+        if not self._ensure_manage_storage(jump=False):
+            self._show_storage_permission_popup()
             return
         os.makedirs(self.out_dir, exist_ok=True)
         self._downloading = True
@@ -504,6 +508,8 @@ class CrawlerApp(App):
                     paths.append(p)
             except Exception as e:  # noqa: BLE001
                 self.msg_queue.put(("log", self._fmt_download_err(e)))
+                if self._is_permission_err(e):
+                    self.msg_queue.put(("permission_popup", None))
             self.msg_queue.put(("download_done", (1, paths)))
 
         threading.Thread(target=run, daemon=True).start()
@@ -516,7 +522,8 @@ class CrawlerApp(App):
         if not selected:
             self._log("请先选择要下载的资源")
             return
-        if not self._ensure_manage_storage(jump=True):
+        if not self._ensure_manage_storage(jump=False):
+            self._show_storage_permission_popup()
             return
         os.makedirs(self.out_dir, exist_ok=True)
         self._downloading = True
@@ -540,10 +547,71 @@ class CrawlerApp(App):
                 except Exception as e:  # noqa: BLE001
                     self.msg_queue.put(
                         ("log", self._fmt_download_err(e, res.display_name())))
+                    if self._is_permission_err(e):
+                        self.msg_queue.put(("permission_popup", None))
             self.msg_queue.put(("download_done", (total, paths)))
 
         self.download_thread = threading.Thread(target=run, daemon=True)
         self.download_thread.start()
+
+    # ---- 存储权限弹窗：每次打开检测 / 出错时提示 ----
+    def _is_permission_err(self, e):
+        txt = str(e).lower()
+        return "operation not permitted" in txt or "permission denied" in txt
+
+    def _show_storage_permission_popup(self):
+        # 避免重复弹出
+        if getattr(self, "_perm_popup_open", False):
+            return
+        from kivy.uix.popup import Popup
+
+        box = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(12))
+        title = Label(
+            text="需要开启『所有文件访问权限』",
+            size_hint_y=None, height=dp(36),
+            font_size=sp(16), bold=True, color=(1, 1, 1, 1))
+        msg = Label(
+            text=("本应用要把文件下载到手机内部存储的 pachong 文件夹，\n"
+                  "需在系统设置中开启『所有文件访问权限』。\n\n"
+                  "开启步骤：\n"
+                  "  设置 → 应用 → 通用网页爬虫 → 权限\n"
+                  "  → 开启『所有文件访问权限』\n\n"
+                  "开启后返回本应用即可正常下载。"),
+            size_hint_y=1, font_size=sp(13),
+            color=(0.95, 0.95, 0.95, 1),
+            halign="left", valign="top")
+        msg.bind(size=lambda inst, val: setattr(inst, "text_size", val))
+
+        btn_row = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(10))
+        btn_later = Button(text="稍后", background_color=(0.3, 0.3, 0.3, 1))
+        btn_open = Button(text="去开启", background_color=(0.05, 0.39, 0.61, 1))
+
+        popup = Popup(title="", separator_height=0, content=box,
+                      size_hint=(0.92, 0.72), auto_dismiss=False,
+                      on_dismiss=lambda *a: setattr(
+                          self, "_perm_popup_open", False))
+
+        def do_open(*a):
+            try:
+                self._open_manage_storage_settings()
+            except Exception as e:  # noqa: BLE001
+                self._log(f"[权限] 无法自动打开设置页：{e}")
+                try:
+                    self._open_app_settings()
+                except Exception as e2:  # noqa: BLE001
+                    self._log(f"[权限] 仍无法打开：{e2}")
+            popup.dismiss()
+
+        btn_open.bind(on_release=do_open)
+        btn_later.bind(on_release=popup.dismiss)
+        btn_row.add_widget(btn_later)
+        btn_row.add_widget(btn_open)
+        box.add_widget(title)
+        box.add_widget(msg)
+        box.add_widget(btn_row)
+
+        self._perm_popup_open = True
+        popup.open()
 
     # ---- 下载失败提示：遇到 Operation not permitted 时明确指向权限问题 ----
     def _fmt_download_err(self, e, name=None):
@@ -632,6 +700,8 @@ class CrawlerApp(App):
     def _handle(self, kind, payload):
         if kind == "log":
             self._log(payload)
+        elif kind == "permission_popup":
+            self._show_storage_permission_popup()
         elif kind == "resource":
             self._add_resource(payload)
         elif kind == "crawl_progress":
