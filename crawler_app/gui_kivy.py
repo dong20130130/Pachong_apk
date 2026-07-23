@@ -32,6 +32,41 @@ from crawler_app.models import Resource
 
 
 # ---------------------------------------------------------------------------
+# 中文字体：Kivy 默认 Roboto 不含中文字形，所有中文会显示成方框(□)。
+# 这里把项目 fonts/ 下的 CJK 字体注册为 Kivy 默认别名 "Roboto"，
+# 这样所有未显式指定 font_name 的控件(Label/Button/TextInput/Spinner…)都用中文字体。
+# 字体文件须由构建方提供(见下方候选名)，且 buildozer.spec 的
+# source.include_exts 必须含 ttf，才会被打包进 APK。
+# ---------------------------------------------------------------------------
+def _register_cjk_font():
+    import os as _os
+    from kivy.core.text import LabelBase
+    _here = _os.path.dirname(_os.path.abspath(__file__))
+    _font_dir = _os.path.normpath(_os.path.join(_here, "..", "fonts"))
+    _candidates = [
+        "NotoSansSC-Regular.ttf",
+        "simhei.ttf",
+        "simkai.ttf",
+        "Deng.ttf",
+        "simfang.ttf",
+    ]
+    for _name in _candidates:
+        _path = _os.path.join(_font_dir, _name)
+        if _os.path.exists(_path):
+            LabelBase.register(
+                name="Roboto",
+                fn_regular=_path,
+                fn_bold=_path,
+                fn_italic=_path,
+                fn_bolditalic=_path,
+            )
+            return
+
+
+_register_cjk_font()
+
+
+# ---------------------------------------------------------------------------
 # 单个资源行（含勾选框 + 类型 + 名称）
 # ---------------------------------------------------------------------------
 class ResRow(BoxLayout):

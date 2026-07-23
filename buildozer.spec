@@ -11,7 +11,9 @@ version = 1.0.0
 
 # 源码目录（整个项目根）。排除虚拟环境与缓存，避免打包体积爆炸。
 source.dir = .
-source.include_exts = py,png,jpg,kv,txt,json,md
+source.include_exts = py,png,jpg,kv,txt,json,md,ttf,otf
+# 中文字体目录（CJK TTF/OTF），见 crawler_app/gui_kivy.py 的 _register_cjk_font。
+# 该目录下的字体文件会被上面的 include_exts(ttf,otf) 一并打包进 APK。
 source.exclude_dirs = venv, .git, __pycache__, .workbuddy, bin, .buildozer
 source.exclude_patterns = *.pyc, *.pyo, venv/*, *.spec, .idea/*, .vscode/*
 
