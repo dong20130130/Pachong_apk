@@ -416,6 +416,19 @@ class CrawlerApp(App):
     def _on_resource(self, res):
         self.msg_queue.put(("resource", res))
 
+    # ---- 实测：当前能否真正写入输出目录（比 isExternalStorageManager 更可靠）----
+    def _can_write_out_dir(self):
+        d = self.out_dir
+        try:
+            os.makedirs(d, exist_ok=True)
+            tmp = os.path.join(d, ".write_test_" + str(os.getpid()))
+            with open(tmp, "w") as f:
+                f.write("ok")
+            os.remove(tmp)
+            return True
+        except Exception:
+            return False
+
     # ---- Android 11+ 存储权限（写 /sdcard 根目录必需）----
     def _ensure_manage_storage(self, jump=False):
         # MANAGE_EXTERNAL_STORAGE 是特殊权限：仅靠 buildozer.spec 声明不够，
@@ -435,6 +448,11 @@ class CrawlerApp(App):
             Environment = autoclass("android.os.Environment")
             if Environment.isExternalStorageManager():
                 return True  # 已授权
+            # 兜底：部分机型/ROM 上 isExternalStorageManager() 授权后反映不及时，
+            # 直接实测能否写入输出目录，能写就视为已授权。
+            if self._can_write_out_dir():
+                self._log("[权限] 实测可写入，视为已授权")
+                return True
             if jump:
                 self._open_manage_storage_settings()
                 self._log("[权限] 已跳转到设置页，请开启『所有文件访问权限』后返回并重新点击下载")
@@ -582,12 +600,14 @@ class CrawlerApp(App):
             halign="left", valign="top")
         msg.bind(size=lambda inst, val: setattr(inst, "text_size", val))
 
-        btn_row = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(10))
+        btn_row = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
         btn_later = Button(text="稍后", background_color=(0.3, 0.3, 0.3, 1))
+        btn_retry = Button(text="我已开启，重试",
+                          background_color=(0.2, 0.5, 0.2, 1))
         btn_open = Button(text="去开启", background_color=(0.05, 0.39, 0.61, 1))
 
         popup = Popup(title="", separator_height=0, content=box,
-                      size_hint=(0.92, 0.72), auto_dismiss=False,
+                      size_hint=(0.92, 0.78), auto_dismiss=False,
                       on_dismiss=lambda *a: setattr(
                           self, "_perm_popup_open", False))
 
@@ -602,9 +622,20 @@ class CrawlerApp(App):
                     self._log(f"[权限] 仍无法打开：{e2}")
             popup.dismiss()
 
+        def do_retry(*a):
+            # 用户已在设置中开启后，回到本弹窗点此立即复核
+            if self._ensure_manage_storage(jump=False):
+                self._log("[权限] 已确认获得授权，可正常下载")
+                popup.dismiss()
+            else:
+                self._log("[权限] 仍未检测到授权，请确认已在"
+                          "『所有文件访问权限』中开启并允许")
+
         btn_open.bind(on_release=do_open)
         btn_later.bind(on_release=popup.dismiss)
+        btn_retry.bind(on_release=do_retry)
         btn_row.add_widget(btn_later)
+        btn_row.add_widget(btn_retry)
         btn_row.add_widget(btn_open)
         box.add_widget(title)
         box.add_widget(msg)
