@@ -37,6 +37,18 @@ jobs:
           # 注意：buildozer 无 1.5.2 版本，PyPI 现有 ...1.5.0, 1.6.0；这里用 1.5.0
           pip install "buildozer==1.5.0" "Cython==0.29.36"
 
+      - name: Use JDK 17 for Gradle (AGP requires Java 17)
+        run: |
+          # buildozer 1.5.0 生成的 Gradle 8.14 + Android Gradle Plugin 需要 Java 17，
+          # 而 runner 默认 JAVA_HOME 指向 JDK 11，会导致 gradlew 立即失败：
+          #   "Android Gradle plugin requires Java 17 to run. You are currently using Java 11."
+          # openjdk-17-jdk 已在“Install system dependencies”里用 apt 安装，这里把 JAVA_HOME 指向它。
+          J17=$(ls -d /usr/lib/jvm/java-17-openjdk-amd64 2>/dev/null || ls -d /usr/lib/jvm/*17* 2>/dev/null | head -1)
+          if [ -z "$J17" ]; then echo "::error::JDK 17 not found under /usr/lib/jvm"; exit 1; fi
+          echo "JAVA_HOME=$J17" >> "$GITHUB_ENV"
+          echo "Selected JAVA_HOME=$J17"
+          "$J17/bin/java" -version
+
       - name: Build APK (debug)
         id: build
         env:
