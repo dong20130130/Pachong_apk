@@ -6,9 +6,8 @@ package.name = webcrawler
 package.domain = org.example.webcrawler
 version = 1.0.0
 
-# 入口：Kivy 版 GUI
-android.entrypoint = main_android.py
-main.py = main_android.py
+# 入口：Kivy 版 GUI。注意：buildozer 硬性要求入口文件名必须是 main.py，
+# 且位于 source.dir 根目录；“main.py = xxx” 这种写法不会被识别。
 
 # 源码目录（整个项目根）。排除虚拟环境与缓存，避免打包体积爆炸。
 source.dir = .

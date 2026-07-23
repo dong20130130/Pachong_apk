@@ -7,7 +7,7 @@
 | 文件 | 用途 | 平台 |
 |------|------|------|
 | `main.py` / `gui.py` | 桌面版（Tkinter） | Windows / Linux / macOS |
-| `main_android.py` / `gui_kivy.py` | 手机版（Kivy） | Android |
+| `main.py` / `gui_kivy.py` | 手机版（Kivy） | Android |
 | `buildozer.spec` | 打包配置 | Android |
 | `.github/workflows/build-apk.yml` | 云端一键编译 | GitHub Actions |
 
@@ -81,7 +81,7 @@ ls bin/*.apk
 ## 文件清单
 
 - `crawler_app/gui_kivy.py` — Kivy 版界面（复用核心逻辑）
-- `main_android.py` — Android 入口
+- `main.py` — Android 入口
 - `buildozer.spec` — 打包配置（依赖、权限、SDK 版本）
 - `.github/workflows/build-apk.yml` — 云端一键编译工作流
 - 本文件 — 编译与使用说明
