@@ -32,7 +32,7 @@ fullscreen = 0
 android.wakelock = True
 
 # Android 权限
-android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, POST_NOTIFICATIONS
+android.permissions = INTERNET, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, POST_NOTIFICATIONS, MANAGE_EXTERNAL_STORAGE
 android.api = 33
 android.minapi = 21
 android.sdk = 33
