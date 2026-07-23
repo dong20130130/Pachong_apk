@@ -245,14 +245,20 @@ class CrawlerApp(App):
 
         # 底部：操作 + 进度
         bottom = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(6))
-        self.btn_selall = Button(text="全选", size_hint_x=0.18)
-        self.btn_invert = Button(text="反选", size_hint_x=0.18)
-        self.btn_dl = Button(text="下载选中", size_hint_x=0.3,
+        self.btn_selall = Button(text="全选", size_hint_x=0.15)
+        self.btn_invert = Button(text="反选", size_hint_x=0.15)
+        self.btn_dl = Button(text="下载选中", size_hint_x=0.25,
                              background_color=(0.05, 0.39, 0.61, 1))
-        self.progress = ProgressBar(size_hint_x=0.34, max=100, value=0)
+        # 下载完成后直接打开（勾选后，用系统查看器打开刚下载的文件/目录）
+        self.open_after_cb = CheckBox(active=False, size_hint_x=0.1)
+        self.open_after_lab = Label(text="下完打开", size_hint_x=0.13,
+                                    font_size=sp(11), color=(0.85, 0.85, 0.85, 1))
+        self.progress = ProgressBar(size_hint_x=0.22, max=100, value=0)
         bottom.add_widget(self.btn_selall)
         bottom.add_widget(self.btn_invert)
         bottom.add_widget(self.btn_dl)
+        bottom.add_widget(self.open_after_cb)
+        bottom.add_widget(self.open_after_lab)
         bottom.add_widget(self.progress)
         root.add_widget(bottom)
 
@@ -400,16 +406,19 @@ class CrawlerApp(App):
 
         def run():
             cf, br = self._cookie_args()
+            paths = []
             try:
-                download(res, self.out_dir,
-                         progress=lambda c, t: self.msg_queue.put(
-                             ("download_progress", (c, t))),
-                         status=lambda m: self.msg_queue.put(("log", m)),
-                         ignore_ssl=self.ssl_cb.active,
-                         cookiefile=cf, browser=br)
+                p = download(res, self.out_dir,
+                             progress=lambda c, t: self.msg_queue.put(
+                                 ("download_progress", (c, t))),
+                             status=lambda m: self.msg_queue.put(("log", m)),
+                             ignore_ssl=self.ssl_cb.active,
+                             cookiefile=cf, browser=br)
+                if p:
+                    paths.append(p)
             except Exception as e:  # noqa: BLE001
                 self.msg_queue.put(("log", f"[失败] {e}"))
-            self.msg_queue.put(("download_done", 1))
+            self.msg_queue.put(("download_done", (1, paths)))
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -428,22 +437,50 @@ class CrawlerApp(App):
         def run():
             total = len(selected)
             cf, br = self._cookie_args()
+            paths = []
             for i, res in enumerate(selected, 1):
                 self.msg_queue.put(("download_file", (i, total, res)))
                 try:
-                    download(res, self.out_dir,
-                             progress=lambda c, t: self.msg_queue.put(
-                                 ("download_progress", (c, t))),
-                             status=lambda m: self.msg_queue.put(("log", m)),
-                             ignore_ssl=self.ssl_cb.active,
-                             cookiefile=cf, browser=br)
+                    p = download(res, self.out_dir,
+                                 progress=lambda c, t: self.msg_queue.put(
+                                     ("download_progress", (c, t))),
+                                 status=lambda m: self.msg_queue.put(("log", m)),
+                                 ignore_ssl=self.ssl_cb.active,
+                                 cookiefile=cf, browser=br)
+                    if p:
+                        paths.append(p)
                 except Exception as e:  # noqa: BLE001
                     self.msg_queue.put(
                         ("log", f"[失败] {res.display_name()}: {e}"))
-            self.msg_queue.put(("download_done", total))
+            self.msg_queue.put(("download_done", (total, paths)))
 
         self.download_thread = threading.Thread(target=run, daemon=True)
         self.download_thread.start()
+
+    # ---- 下载完成后直接打开（安卓：调起系统查看器打开文件/目录） ----
+    def _open_downloaded(self, paths):
+        try:
+            from jnius import autoclass
+            import mimetypes
+            Intent = autoclass("android.content.Intent")
+            Uri = autoclass("android.net.Uri")
+            File = autoclass("java.io.File")
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            activity = PythonActivity.mActivity
+            if len(paths) == 1:
+                target = paths[0]
+                mime = mimetypes.guess_type(target)[0] or "*/*"
+            else:
+                target, mime = self.out_dir, "*/*"
+            uri = Uri.fromFile(File(target))
+            intent = Intent(Intent.ACTION_VIEW)
+            intent.setDataAndType(uri, mime)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.startActivity(intent)
+            self._log(f"[打开] 已请求系统打开：{target}")
+        except Exception as e:  # noqa: BLE001
+            self._log(f"[打开失败] {e}（可改用『打开输出目录』）")
 
     # ---- 资源列表选择 ----
     def select_all(self, *a):
@@ -493,8 +530,11 @@ class CrawlerApp(App):
             self._downloading = False
             self.btn_start.disabled = False
             self._set_progress(0, 0)
-            self.status_label.text = f"下载完成，共 {payload} 个"
+            total, paths = payload
+            self.status_label.text = f"下载完成，共 {total} 个"
             self._log(f"[完成] 下载结束，保存到：{self.out_dir}")
+            if self.open_after_cb.active and paths:
+                self._open_downloaded(paths)
 
     def _set_progress(self, cur, tot):
         if tot and tot > 0:
