@@ -43,14 +43,12 @@ android.ndk = 25b
 # 只编 arm64-v8a：减少编译内存占用与耗时（armeabi-v7a 现代手机基本不需要），降低 OOM 失败概率。
 android.archs = arm64-v8a
 
-# 固定签名密钥：用仓库内 keystore/debug.keystore 给 APK 签名，保证每次构建
-# 签名一致。配合 workflow 中的 `android release` 命令，手机端可直接覆盖安装
-# 旧版、无需先卸载。密码/别名固定为 android / androiddebugkey。
+# 固定签名密钥（用于免卸载覆盖安装）：
+# 不在此处配置 android.keystore —— buildozer `android debug` 会忽略它，
+# 改用 ~/.android/debug.keystore 签名。CI 工作流把仓库内固定密钥库
+# (keystore/debug.keystore，标准 Android debug 格式 alias=androiddebugkey/密码=android)
+# 复制到 ~/.android/debug.keystore，使每次 debug 构建签名一致，手机可直接覆盖安装。
 # 注意：这是 debug 用途的密钥，切勿用于正式发布；若仓库为公开仓库，等同公开签名。
-android.keystore = keystore/debug.keystore
-android.keyalias = androiddebugkey
-android.keystore_password = android
-android.key_password = android
 # 不固定 p4a.branch：使用 buildozer 依赖锁定的 p4a 版本，避免主干漂移。
 
 [buildozer]

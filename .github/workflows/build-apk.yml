@@ -49,7 +49,18 @@ jobs:
           echo "Selected JAVA_HOME=$J17"
           "$J17/bin/java" -version
 
-      - name: Build APK (release, stable signing key)
+      - name: Restore stable debug keystore (for seamless in-place upgrades)
+        run: |
+          # buildozer `android debug` 用 ~/.android/debug.keystore 给 APK 签名。
+          # 默认每次 CI 都是全新 VM、会随机重新生成该文件 → 签名不一致 → 必须卸载旧版。
+          # 这里用仓库内固定密钥库覆盖它，使所有 debug 构建签名一致、可直接覆盖安装。
+          # 该密钥库就是标准 Android debug 格式(alias=androiddebugkey, 密码=android)，
+          # 与 buildozer 期望完全一致。
+          mkdir -p "$HOME/.android"
+          cp keystore/debug.keystore "$HOME/.android/debug.keystore"
+          echo "已恢复固定 debug 密钥库"
+
+      - name: Build APK (debug, stable signing key)
         id: build
         env:
           # 让 buildozer 自动接受 Android SDK 许可
@@ -58,9 +69,10 @@ jobs:
           # 完整输出同时落盘到 buildozer_full.log，失败时可精准抓取真错误
           # 注意：GitHub 默认 bash 带 -o pipefail，buildozer 失败会让本步骤失败
           set -o pipefail
-          # 用 android release（而非 debug）以启用 buildozer.spec 中指定的固定密钥库，
-          # 保证每次构建签名一致，手机端可直接覆盖安装旧版、无需先卸载。
-          buildozer android release --verbose 2>&1 | tee buildozer_full.log
+          # android debug 产出可直接安装的 bin/*.apk，并用上面恢复的
+          # ~/.android/debug.keystore 签名 → 跨构建签名一致、可覆盖安装。
+          # （不要用 android release：它会产出 .aab 而非 .apk，无法直接装到手机。）
+          buildozer android debug --verbose 2>&1 | tee buildozer_full.log
 
       - name: Surface real error on failure
         if: failure()
