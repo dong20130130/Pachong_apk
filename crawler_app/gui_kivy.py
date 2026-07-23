@@ -232,13 +232,18 @@ class CrawlerApp(App):
         log_box = BoxLayout(orientation="vertical", size_hint_y=0.5)
         log_box.add_widget(Label(text="日志", size_hint_y=None, height=dp(22),
                                  font_size=sp(12), color=(0.8, 0.8, 0.8, 1)))
-        self.log_label = Label(text="", size_hint_y=None, font_size=sp(11),
+        self.log_label = Label(text="", size_hint_y=None, size_hint_x=1,
+                               font_size=sp(11),
                                color=(0.85, 0.85, 0.85, 1),
                                halign="left", valign="top")
         self.log_label.bind(
             texture_size=lambda inst, sz: setattr(inst, "height", sz[1]))
-        log_sv = ScrollView()
+        # 只允许纵向滚动，横向靠自动换行
+        log_sv = ScrollView(do_scroll_x=False, do_scroll_y=True)
         log_sv.add_widget(self.log_label)
+        # 把文本宽度约束到滚动视图宽度 → 长行自动换行，不再溢出显示不全
+        log_sv.bind(width=lambda inst, w: setattr(
+            self.log_label, "text_size", (w, None)))
         log_box.add_widget(log_sv)
         mid.add_widget(log_box)
         root.add_widget(mid)
