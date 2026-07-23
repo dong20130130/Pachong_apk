@@ -14,7 +14,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,txt,json,md,ttf,otf
 # 中文字体目录（CJK TTF/OTF），见 crawler_app/gui_kivy.py 的 _register_cjk_font。
 # 该目录下的字体文件会被上面的 include_exts(ttf,otf) 一并打包进 APK。
-source.exclude_dirs = venv, .git, __pycache__, .workbuddy, bin, .buildozer
+source.exclude_dirs = venv, .git, __pycache__, .workbuddy, bin, .buildozer, keystore
 source.exclude_patterns = *.pyc, *.pyo, venv/*, *.spec, .idea/*, .vscode/*
 
 # 依赖。注意：imageio-ffmpeg 自带的二进制是桌面版(x86/win)，
@@ -42,6 +42,15 @@ android.accept_sdk_license = True
 android.ndk = 25b
 # 只编 arm64-v8a：减少编译内存占用与耗时（armeabi-v7a 现代手机基本不需要），降低 OOM 失败概率。
 android.archs = arm64-v8a
+
+# 固定签名密钥：用仓库内 keystore/debug.keystore 给 APK 签名，保证每次构建
+# 签名一致。配合 workflow 中的 `android release` 命令，手机端可直接覆盖安装
+# 旧版、无需先卸载。密码/别名固定为 android / androiddebugkey。
+# 注意：这是 debug 用途的密钥，切勿用于正式发布；若仓库为公开仓库，等同公开签名。
+android.keystore = keystore/debug.keystore
+android.keyalias = androiddebugkey
+android.keystore_password = android
+android.key_password = android
 # 不固定 p4a.branch：使用 buildozer 依赖锁定的 p4a 版本，避免主干漂移。
 
 [buildozer]

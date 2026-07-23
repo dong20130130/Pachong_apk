@@ -49,7 +49,7 @@ jobs:
           echo "Selected JAVA_HOME=$J17"
           "$J17/bin/java" -version
 
-      - name: Build APK (debug)
+      - name: Build APK (release, stable signing key)
         id: build
         env:
           # 让 buildozer 自动接受 Android SDK 许可
@@ -58,7 +58,9 @@ jobs:
           # 完整输出同时落盘到 buildozer_full.log，失败时可精准抓取真错误
           # 注意：GitHub 默认 bash 带 -o pipefail，buildozer 失败会让本步骤失败
           set -o pipefail
-          buildozer android debug --verbose 2>&1 | tee buildozer_full.log
+          # 用 android release（而非 debug）以启用 buildozer.spec 中指定的固定密钥库，
+          # 保证每次构建签名一致，手机端可直接覆盖安装旧版、无需先卸载。
+          buildozer android release --verbose 2>&1 | tee buildozer_full.log
 
       - name: Surface real error on failure
         if: failure()
