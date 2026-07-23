@@ -33,14 +33,21 @@ from crawler_app.models import Resource
 
 # ---------------------------------------------------------------------------
 # 中文字体：Kivy 默认 Roboto 不含中文字形，所有中文会显示成方框(□)。
-# 这里把项目 fonts/ 下的 CJK 字体注册为 Kivy 默认别名 "Roboto"，
-# 这样所有未显式指定 font_name 的控件(Label/Button/TextInput/Spinner…)都用中文字体。
+# 这里把项目 fonts/ 下的 CJK 字体注册为 Kivy 默认别名 "Roboto"，并同时设为
+# Kivy 全局默认字体(default_font)，确保所有未显式指定 font_name 的控件
+# (Label/Button/TextInput/Spinner…)都用中文字体。
 # 字体文件须由构建方提供(见下方候选名)，且 buildozer.spec 的
 # source.include_exts 必须含 ttf，才会被打包进 APK。
+# 加载结果写入 _CJK_FONT_MSG，App.build() 会把它打到日志面板，方便排查。
 # ---------------------------------------------------------------------------
+_CJK_FONT_MSG = "未加载中文字体（中文将显示为方框）"
+
+
 def _register_cjk_font():
     import os as _os
     from kivy.core.text import LabelBase
+    from kivy.config import Config
+    global _CJK_FONT_MSG
     _here = _os.path.dirname(_os.path.abspath(__file__))
     _font_dir = _os.path.normpath(_os.path.join(_here, "..", "fonts"))
     _candidates = [
@@ -60,7 +67,13 @@ def _register_cjk_font():
                 fn_italic=_path,
                 fn_bolditalic=_path,
             )
+            # 同时设为全局默认字体，覆盖所有未指定 font_name 的控件
+            # 注意：Kivy 的 default_font 是逗号分隔字符串，不能用列表
+            Config.set("kivy", "default_font",
+                       "Roboto,%s,%s,%s" % (_path, _path, _path))
+            _CJK_FONT_MSG = "已加载中文字体：" + _name
             return
+    _CJK_FONT_MSG = "未找到中文字体（目录 %s）" % _font_dir
 
 
 _register_cjk_font()
@@ -120,14 +133,18 @@ class CrawlerApp(App):
 
         # 网址行
         url_row = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(6))
-        self.url_input = TextInput(text="https://example.com", multiline=False,
-                                   size_hint_x=0.6,
+        # 进入时网址栏为空；用 hint_text 提示用户输入（不再预填 example.com）
+        self.url_input = TextInput(text="", hint_text="请输入网址", multiline=False,
+                                   size_hint_x=0.55,
                                    background_color=(0.16, 0.16, 0.16, 1),
                                    foreground_color=(1, 1, 1, 1))
-        self.btn_start = Button(text="开始爬取", size_hint_x=0.27,
+        self.btn_clear_url = Button(text="清空", size_hint_x=0.13,
+                                    background_color=(0.3, 0.3, 0.3, 1))
+        self.btn_start = Button(text="开始爬取", size_hint_x=0.25,
                                 background_color=(0.05, 0.39, 0.61, 1))
-        self.btn_stop = Button(text="停止", size_hint_x=0.13, disabled=True)
+        self.btn_stop = Button(text="停止", size_hint_x=0.12, disabled=True)
         url_row.add_widget(self.url_input)
+        url_row.add_widget(self.btn_clear_url)
         url_row.add_widget(self.btn_start)
         url_row.add_widget(self.btn_stop)
         root.add_widget(url_row)
@@ -246,6 +263,7 @@ class CrawlerApp(App):
         # 绑定事件
         self.btn_start.bind(on_release=self.start_crawl)
         self.btn_stop.bind(on_release=self.stop_crawl)
+        self.btn_clear_url.bind(on_release=self.clear_url)
         self.btn_vp.bind(on_release=self.download_platform)
         self.btn_cookie.bind(on_release=self.open_filechooser)
         self.btn_selall.bind(on_release=self.select_all)
@@ -256,6 +274,7 @@ class CrawlerApp(App):
         Clock.schedule_interval(self._poll, 0.1)
 
         self._log(f"输出目录：{self.out_dir}")
+        self._log(_CJK_FONT_MSG)
         return root
 
     # ---- 默认输出目录 ----
@@ -279,6 +298,11 @@ class CrawlerApp(App):
         if self.cookiefile:
             return self.cookiefile, None
         return None, self.browser_spin.text
+
+    # ---- 一键清空网址栏 ----
+    def clear_url(self, *a):
+        self.url_input.text = ""
+        self.url_input.focus = True
 
     # ---- 选择 cookies.txt ----
     def open_filechooser(self, *a):
