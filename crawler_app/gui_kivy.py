@@ -290,6 +290,7 @@ class CrawlerApp(App):
         Clock.schedule_interval(self._poll, 0.1)
 
         self._log(f"输出目录：{self.out_dir}")
+        self._log("[提示] 即手机文件管理器中的『内部存储/pachong』")
         self._log(_CJK_FONT_MSG)
         if not self._ensure_manage_storage(jump=False):
             self._log("[提示] 下载需『所有文件访问权限』，首次下载会跳转到设置页开启")
@@ -297,21 +298,27 @@ class CrawlerApp(App):
 
     # ---- 默认输出目录 ----
     def _default_out_dir(self):
-        # 下载到内部存储根目录（/sdcard）下的 pachong 文件夹，
-        # 用户在文件管理器自行创建该目录，app 直接写入其中。
+        # 下载到内部存储根目录下的 pachong 文件夹，用户在文件管理器自行创建。
+        # 优先用 /sdcard：它是内部存储根的符号链接，文件管理器显示即『内部存储』，
+        # 这样日志提示的路径（/sdcard/pachong）与用户在文件管理器看到的完全一致；
+        # 拿不到再回退到 Environment 真实路径 / 外部文件目录 / 内部目录 / cwd。
+        candidates = ["/sdcard"]
         try:
-            from android.storage import primary_external_storage_path
-            base = primary_external_storage_path()
+            from jnius import autoclass
+            Environment = autoclass("android.os.Environment")
+            p = Environment.getExternalStorageDirectory().getAbsolutePath()
+            if p:
+                candidates.insert(0, p)
         except Exception:
-            try:
-                from android import mActivity
-                base = mActivity.getExternalFilesDir(None).getAbsolutePath()
-            except Exception:
-                try:
-                    base = App.get_running_app().user_data_dir
-                except Exception:
-                    base = os.getcwd()
-        return os.path.join(base, "pachong")
+            pass
+        for c in candidates:
+            if c and os.path.isdir(c):
+                return os.path.join(c, "pachong")
+        # 兜底（非 Android / 极端情况）
+        try:
+            return os.path.join(App.get_running_app().user_data_dir, "pachong")
+        except Exception:
+            return os.path.join(os.getcwd(), "pachong")
 
     # ---- 日志 ----
     def _log(self, msg):
