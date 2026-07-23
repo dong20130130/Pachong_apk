@@ -295,11 +295,18 @@ class CrawlerApp(App):
 
     # ---- 默认输出目录 ----
     def _default_out_dir(self):
+        # 优先用 App 外部存储目录（/sdcard/Android/data/<pkg>/files/downloads），
+        # 文件管理器可见、且 Android 11+ 不需要额外存储权限；
+        # 失败回退到私有内部目录或 cwd，保证任何平台都能跑。
         try:
-            ud = App.get_running_app().user_data_dir
+            from android import mActivity
+            base = mActivity.getExternalFilesDir(None).getAbsolutePath()
         except Exception:
-            ud = os.getcwd()
-        return os.path.join(ud, "downloads")
+            try:
+                base = App.get_running_app().user_data_dir
+            except Exception:
+                base = os.getcwd()
+        return os.path.join(base, "downloads")
 
     # ---- 日志 ----
     def _log(self, msg):
